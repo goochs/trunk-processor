@@ -1,0 +1,20 @@
+[package]
+name = "trunk-processor"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+axum = { version = "0.8", features = ["default", "multipart"] }
+chrono = "0.4"
+chrono-tz = "0.10"
+env = "1.0"
+object_store = { version = "0.12", features = ["aws"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.47", features = ["full"] }
+reqwest = { version = "0.12", features = ["multipart"] }
+bytes = "1.10"
+derive_more = { version = "2.0.1", features = ["from"] }
+envy = "0.4.2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
