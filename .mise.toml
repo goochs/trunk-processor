@@ -1,0 +1,5 @@
+[tools]
+lefthook = "latest"
+
+[env]
+_.file = '.env'

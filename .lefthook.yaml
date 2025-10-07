@@ -1,0 +1,15 @@
+assert_lefthook_installed: true
+
+pre-commit:
+  jobs:
+    - name: format
+      run: cargo fmt --all
+      stage_fixed: true
+    - name: lint
+      group:
+        parallel: true
+        jobs:
+          - run: cargo fmt --all -- --check
+          - run: cargo clippy -- -D warnings
+    - name: test
+      run: cargo test
