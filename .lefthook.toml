@@ -1,0 +1,22 @@
+assert_lefthook_installed = true
+
+[[pre-commit.jobs]]
+name = "format"
+run = "cargo fmt --all"
+stage_fixed = true
+
+[[pre-commit.jobs]]
+name = "lint"
+
+  [pre-commit.jobs.group]
+  parallel = true
+
+    [[pre-commit.jobs.group.jobs]]
+    run = "cargo fmt --all -- --check"
+
+    [[pre-commit.jobs.group.jobs]]
+    run = "cargo clippy -- -D warnings"
+
+[[pre-commit.jobs]]
+name = "test"
+run = "cargo test"
