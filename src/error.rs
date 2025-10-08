@@ -16,9 +16,9 @@ pub enum Error {
     },
     InvalidFileType(String),
     Configuration(String),
-    ServerInit(String),
+    DateTime(String),
     #[from]
-    Io(std::io::Error),
+    ServerInit(std::io::Error),
     #[from]
     S3Upload(object_store::Error),
     #[from]
@@ -36,14 +36,14 @@ impl IntoResponse for Error {
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
         let error_message = match self {
-            Error::MissingField(field) => format!("Missing required field or filename: {}", field),
+            Error::MissingField(msg) => format!("Missing required field or filename: {}", msg),
             Error::Multipart(msg) => format!("Multipart processing error: {}", msg),
             Error::FileTooLarge { size, max_size } => {
                 format!("File too large: {} bytes (max: {} bytes)", size, max_size)
             }
             Error::InvalidFileType(msg) => format!("Invalid file type: {}", msg),
             Error::Configuration(msg) => format!("Configuration error: {}", msg),
-            Error::Io(msg) => format!("IO Error: {}", msg),
+            Error::DateTime(msg) => format!("DateTime error: {}", msg),
             Error::S3Upload(msg) => format!("S3 Upload Error: {}", msg),
             Error::PathParse(msg) => format!("Invalid object path: {}", msg),
             Error::JsonParsing(msg) => format!("Json Parsing Error: {}", msg),

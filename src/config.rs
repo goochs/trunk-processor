@@ -6,6 +6,7 @@ pub struct ProcessorConfig {
     pub s3_client: object_store::aws::AmazonS3,
     pub http_client: reqwest::Client,
     pub env: EnvConfig,
+    pub filter: FilterConfig,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -16,10 +17,42 @@ pub struct EnvConfig {
     pub model_name: String,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+pub struct FilterConfig {
+    tg_group: Option<Vec<String>>,
+    tg_id: Option<Vec<String>>,
+}
+
+impl FilterConfig {
+    pub fn enabled(&self) -> bool {
+        self.tg_group.is_some() || self.tg_id.is_some()
+    }
+    pub fn group(&self) -> Vec<String> {
+        if let Some(group) = &self.tg_group {
+            group.to_vec()
+        } else {
+            Vec::new()
+        }
+    }
+    pub fn tgid(&self) -> Vec<String> {
+        if let Some(tgid) = &self.tg_id {
+            tgid.to_vec()
+        } else {
+            Vec::new()
+        }
+    }
+}
+
 use crate::error::{Error, Result};
 
 fn init_env() -> Result<EnvConfig> {
     envy::from_env::<EnvConfig>()
+        .map_err(|e| Error::Configuration(format!("Environment configuration error: {}", e)))
+}
+
+fn init_filter() -> Result<FilterConfig> {
+    envy::prefixed("FILTER_")
+        .from_env::<FilterConfig>()
         .map_err(|e| Error::Configuration(format!("Environment configuration error: {}", e)))
 }
 
@@ -41,11 +74,11 @@ fn init_http_client() -> reqwest::Client {
 pub fn initialize() -> Result<ProcessorConfig> {
     let env = init_env()?;
     let s3_client = init_s3_client(&env.bucket_name)?;
-    let http_client = init_http_client();
 
     Ok(ProcessorConfig {
-        s3_client,
-        http_client,
         env,
+        s3_client,
+        http_client: init_http_client(),
+        filter: init_filter()?,
     })
 }

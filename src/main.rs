@@ -1,9 +1,10 @@
+#![deny(unused_crate_dependencies)]
 mod common;
 mod config;
 mod error;
 
 use crate::common::*;
-use crate::config::ProcessorConfig;
+use crate::config::{FilterConfig, ProcessorConfig};
 use crate::error::{Error, Result};
 
 use axum::{
@@ -21,9 +22,7 @@ use tracing::info;
 
 // Constants
 const MAX_FILE_SIZE: usize = 50 * 1024 * 1024; // 50MB
-const ALLOWED_AUDIO_EXTENSIONS: &[&str] = &[".m4a", ".wav", ".mp3"];
-const WEBHOOK_USERNAME: &str = "Trunk Recorder";
-const WEBHOOK_AVATAR_URL: &str = "https://raw.githubusercontent.com/TrunkRecorder/trunkrecorder.github.io/refs/heads/main/static/img/radio.png";
+const ALLOWED_AUDIO_EXTENSIONS: &[&str] = &[".m4a", ".wav"];
 
 // Helper function to extract, validate, and convert the collected HashMap into UploadData.
 fn validate_and_build(mut fields: HashMap<String, UploadedFile>) -> Result<UploadData> {
@@ -119,10 +118,13 @@ fn json_from_bytes(b: &axum::body::Bytes) -> Result<AudioMetadata> {
     serde_json::from_slice(b).map_err(Error::JsonParsing)
 }
 
+fn dt_from_epoch(e: i64) -> Result<DateTime<Utc>> {
+    DateTime::from_timestamp_secs(e)
+        .ok_or_else(|| Error::DateTime("Invalid epoch provided to create dt".to_string()))
+}
+
 fn path_from_json(j: &AudioMetadata) -> Result<String> {
-    let dt: DateTime<Utc> = DateTime::from_timestamp_secs(j.start_time).ok_or_else(|| {
-        Error::Multipart("Invalid start_time provided to create path".to_string())
-    })?;
+    let dt: DateTime<Utc> = dt_from_epoch(j.start_time)?;
 
     let date_path = format!("{}", dt.format("%Y/%m/%d"));
 
@@ -169,7 +171,7 @@ async fn transcribe_audio(f: &UploadedFile, c: &ProcessorConfig) -> Result<Strin
     let file = reqwest::multipart::Part::bytes(f.data.to_vec())
         .file_name(f.name.clone())
         .mime_str("application/octet-stream")
-        .map_err(|e| Error::Multipart(format!("Failed to create multipart: {}", e)))?;
+        .map_err(|e| Error::Multipart(e.to_string()))?;
 
     let form = reqwest::multipart::Form::new()
         .part("file", file)
@@ -184,22 +186,17 @@ async fn transcribe_audio(f: &UploadedFile, c: &ProcessorConfig) -> Result<Strin
         .send()
         .await?
         .text()
-        .await?;
+        .await
+        .map_err(|e| Error::Multipart(e.to_string()))?;
 
     Ok(res)
 }
 
-fn generate_title(m: &AudioMetadata) -> String {
-    format!("{} - {}", m.talkgroup_group, m.talkgroup_description)
+fn format_timestamp_from_datetime(dt: DateTime<Utc>) -> String {
+    dt.to_rfc3339_opts(SecondsFormat::Millis, true)
 }
 
-fn generate_timestamp(ts: i64) -> Result<String> {
-    let dt = DateTime::from_timestamp_secs(ts)
-        .ok_or_else(|| Error::Multipart("Invalid timestamp".to_string()))?;
-    Ok(dt.to_rfc3339_opts(SecondsFormat::Millis, true))
-}
-
-fn format_ids(m: &[SrcList]) -> EmbedField {
+fn format_embed_ids(m: &[SrcList]) -> EmbedField {
     EmbedField {
         name: "Radio IDs:".to_string(),
         value: m
@@ -210,26 +207,38 @@ fn format_ids(m: &[SrcList]) -> EmbedField {
     }
 }
 
-fn format_transcription(t: String) -> EmbedField {
+fn format_embed_transcription(t: String) -> EmbedField {
     EmbedField {
         name: "Transcription:".to_string(),
         value: t,
     }
 }
 
-async fn create_webhook(m: &AudioMetadata, t: String) -> Result<String> {
-    let fields = vec![format_ids(&m.src_list), format_transcription(t)];
+fn format_embed_timestamp(t: &String) -> EmbedField {
+    EmbedField {
+        name: "Start timestamp:".to_string(),
+        value: t.to_string(),
+    }
+}
+
+async fn create_webhook(m: &AudioMetadata, tr: String) -> Result<String> {
+    let timestamp = format_timestamp_from_datetime(dt_from_epoch(m.start_time)?);
+    let fields = vec![
+        format_embed_timestamp(&timestamp),
+        format_embed_ids(&m.src_list),
+        format_embed_transcription(tr),
+    ];
 
     let embeds = vec![WebhookEmbed {
         color: "12110930".to_string(),
-        timestamp: generate_timestamp(m.start_time)?,
-        title: generate_title(m),
+        timestamp,
+        title: format!("{} - {}", m.talkgroup_group, m.talkgroup_description),
         fields,
     }];
 
     let webhook = Webhook {
-        username: WEBHOOK_USERNAME.to_string(),
-        avatar_url: WEBHOOK_AVATAR_URL.to_string(),
+        username: "Trunk Recorder".to_owned(),
+        avatar_url: "https://raw.githubusercontent.com/TrunkRecorder/trunkrecorder.github.io/refs/heads/main/static/img/radio.png".to_owned(),
         embeds,
     };
 
@@ -260,6 +269,36 @@ async fn send_webhook(
     Ok(())
 }
 
+async fn filter_on_metadata(m: &AudioMetadata, c: &FilterConfig) -> bool {
+    let tgid_as_string = &m.talkgroup.to_string();
+    let deny_tgid = format!("!{}", tgid_as_string);
+
+    if !c.tgid().is_empty() {
+        // if tgid filter contains negated tgid, !do_transcription early
+        if c.tgid().contains(&deny_tgid) {
+            info!(tgid = %tgid_as_string, "Matched denied talkgroup, no transcribe");
+            return false;
+        }
+        // if tgid filter contains tgid, do_transcription
+        else if c.tgid().contains(tgid_as_string) {
+            info!(tgid = %tgid_as_string, "Matched talkgroup, transcribing");
+            return true;
+        }
+    };
+
+    if !c.group().is_empty()
+        // if group in include list, do_transcription
+        && c.group().contains(&m.talkgroup_group)
+    {
+        info!(group = %m.talkgroup_group, "Matched group, transcribing");
+        return true;
+    };
+
+    // return false if not negated by previous tgid include, or group include
+    info!(%m.talkgroup_group, %tgid_as_string, "Group and tgid unmatched");
+    false
+}
+
 // ---------------------------------------------------------------------
 // --- HANDLER AND MAIN ---
 // ---------------------------------------------------------------------
@@ -282,19 +321,29 @@ async fn upload(State(config): State<ProcessorConfig>, m: Multipart) -> Result<S
 
     info!(talkgroup = meta.talkgroup, path = %path, "Processed audio metadata");
 
-    let upload_fut = upload_files(&config.s3_client, &path, &files);
-    let transcription_fut = transcribe_audio(&files.audio, &config);
+    let do_transcription = if config.filter.enabled() {
+        filter_on_metadata(&meta, &config.filter).await
+    } else {
+        true
+    };
 
-    let (_, transcription) = tokio::try_join!(upload_fut, transcription_fut)?;
+    if !do_transcription {
+        upload_files(&config.s3_client, &path, &files).await?;
+    } else if do_transcription {
+        let upload_fut = upload_files(&config.s3_client, &path, &files);
+        let transcription_fut = transcribe_audio(&files.audio, &config);
 
-    send_webhook(
-        &config.http_client,
-        &config.env.discord_webhook,
-        &meta,
-        transcription,
-        files.audio,
-    )
-    .await?;
+        let (_, transcription) = tokio::try_join!(upload_fut, transcription_fut)?;
+
+        send_webhook(
+            &config.http_client,
+            &config.env.discord_webhook,
+            &meta,
+            transcription,
+            files.audio,
+        )
+        .await?;
+    }
 
     let duration = Instant::now().duration_since(upload_start);
     info!(
@@ -306,7 +355,7 @@ async fn upload(State(config): State<ProcessorConfig>, m: Multipart) -> Result<S
 }
 
 async fn healthz(headers: HeaderMap) -> Result<String> {
-    let timestamp = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
+    let timestamp = format_timestamp_from_datetime(Utc::now().to_utc());
 
     info!(
         timestamp = %timestamp,
@@ -328,13 +377,23 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "rust_processor=info,tower_http=debug".into()),
+                .unwrap_or_else(|_| "trunk_processor=info,tower_http=debug".into()),
         )
         .init();
 
-    info!("Initializing trunk-processor application");
+    info!("Initializing trunk-processor");
 
     let config = config::initialize()?;
+    if config.filter.enabled() {
+        info!(
+            group = config.filter.group().join(", "),
+            tgid = config.filter.tgid().join(", "),
+            "Filter values provided"
+        );
+    } else {
+        info!("Filtering disabled");
+    }
+
     let app = Router::new()
         .route("/upload", post(upload).with_state(config))
         .route("/healthz", get(healthz));
@@ -344,10 +403,10 @@ async fn main() -> Result<()> {
 
     let listener = TcpListener::bind(bind_addr)
         .await
-        .map_err(|e| Error::ServerInit(e.to_string()))?;
+        .map_err(Error::ServerInit)?;
     axum::serve(listener, app)
         .await
-        .map_err(|e| Error::ServerInit(e.to_string()))?;
+        .map_err(Error::ServerInit)?;
 
     Ok(())
 }
