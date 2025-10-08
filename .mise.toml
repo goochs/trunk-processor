@@ -3,3 +3,9 @@ lefthook = "latest"
 
 [env]
 _.file = '.env'
+
+[tasks.lint]
+description = 'Format and lint with clippy'
+env = { RUST_BACKTRACE = '1' }
+run = 'cargo fmt && cargo clippy'
+alias = 'l'
