@@ -6,9 +6,8 @@ RUN apk update && \
     cargo install cargo-chef --locked
 
 WORKDIR /app
-# Copy the whole project
 COPY . .
-# Prepare a build plan ("recipe")
+# Prepare a build plan
 RUN cargo chef prepare --recipe-path recipe.json
 
 FROM rust:1.90.0-alpine3.22 AS builder
@@ -17,12 +16,10 @@ RUN apk update && \
     cargo install cargo-chef --locked
 
 WORKDIR /app
-# Copy the build plan from the previous Docker stage
 COPY --from=planner /app/recipe.json /app/recipe.json
 
-# Build dependencies - this layer is cached as long as `recipe.json`
-# doesn't change.
-RUN cargo chef cook --recipe-path recipe.json
+# Build dependencies this layer should be cached
+RUN cargo chef cook --release --recipe-path recipe.json
 
 # Build the whole project
 COPY . .
