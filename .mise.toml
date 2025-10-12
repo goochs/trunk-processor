@@ -9,3 +9,8 @@ description = 'Format and lint with clippy'
 env = { RUST_BACKTRACE = '1' }
 run = 'cargo fmt && cargo clippy'
 alias = 'l'
+
+[tasks.build]
+description = 'Build the project'
+run = 'docker build -t trunk-processor:latest .'
+alias = 'b'

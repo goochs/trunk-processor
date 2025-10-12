@@ -1,0 +1,10 @@
+services:
+  trunk-processor:
+    image: trunk-processor:latest
+    container_name: trunk-processor
+    env_file:
+      - .env
+    ports:
+      - "3001:3000"
+    dns:
+      - 10.0.10.1

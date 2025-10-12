@@ -1,9 +1,10 @@
+use axum::body::Bytes;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone)]
 pub struct UploadedFile {
     pub name: String,
-    pub data: axum::body::Bytes,
+    pub data: Bytes,
 }
 
 pub struct UploadData {
@@ -81,4 +82,35 @@ pub struct WebhookEmbed {
 pub struct EmbedField {
     pub name: String,
     pub value: String,
+}
+
+#[derive(Debug)]
+pub enum EmbedFieldType {
+    Timestamp(String),
+    RadioIds(Vec<i64>),
+    Transcription(String),
+    // Easy to extend with new field types
+}
+
+impl EmbedFieldType {
+    pub fn into_embed_field(self) -> EmbedField {
+        match self {
+            EmbedFieldType::Timestamp(timestamp) => EmbedField {
+                name: "Start timestamp:".to_string(),
+                value: timestamp,
+            },
+            EmbedFieldType::RadioIds(ids) => EmbedField {
+                name: "Radio IDs:".to_string(),
+                value: ids
+                    .iter()
+                    .map(|id| id.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            },
+            EmbedFieldType::Transcription(text) => EmbedField {
+                name: "Transcription:".to_string(),
+                value: text,
+            },
+        }
+    }
 }

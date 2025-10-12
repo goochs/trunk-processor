@@ -1,10 +1,12 @@
+use object_store::aws::{AmazonS3, AmazonS3Builder};
+use reqwest::Client;
 use serde::Deserialize;
 use std::time::Duration;
 
 #[derive(Clone, Debug)]
 pub struct ProcessorConfig {
-    pub s3_client: object_store::aws::AmazonS3,
-    pub http_client: reqwest::Client,
+    pub s3_client: AmazonS3,
+    pub http_client: Client,
     pub env: EnvConfig,
     pub filter: FilterConfig,
 }
@@ -56,17 +58,17 @@ fn init_filter() -> Result<FilterConfig> {
         .map_err(|e| Error::Configuration(format!("Environment configuration error: {}", e)))
 }
 
-fn init_s3_client(b: &str) -> Result<object_store::aws::AmazonS3> {
-    object_store::aws::AmazonS3Builder::from_env()
+fn init_s3_client(b: &str) -> Result<AmazonS3> {
+    AmazonS3Builder::from_env()
         .with_bucket_name(b)
         .build()
         .map_err(|e| Error::Configuration(format!("S3 client configuration error: {}", e)))
 }
 
-fn init_http_client() -> reqwest::Client {
-    reqwest::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .connect_timeout(Duration::from_secs(10))
+fn init_http_client() -> Client {
+    Client::builder()
+        .timeout(Duration::from_secs(60))
+        .connect_timeout(Duration::from_secs(20))
         .build()
         .expect("Failed to create HTTP client")
 }

@@ -15,7 +15,10 @@ use axum::{
 };
 use chrono::{DateTime, SecondsFormat, Utc};
 use object_store::{self, ObjectStore, PutPayload, aws::AmazonS3, path::Path};
-use reqwest::multipart::{Form, Part};
+use reqwest::{
+    Client,
+    multipart::{Form, Part},
+};
 use std::{collections::HashMap, time::Instant};
 use tokio::net::TcpListener;
 use tracing::info;
@@ -168,12 +171,9 @@ async fn upload_files(s3: &AmazonS3, path: &str, files: &UploadData) -> Result<(
 }
 
 async fn transcribe_audio(f: &UploadedFile, c: &ProcessorConfig) -> Result<String> {
-    let file = reqwest::multipart::Part::bytes(f.data.to_vec())
-        .file_name(f.name.clone())
-        .mime_str("application/octet-stream")
-        .map_err(|e| Error::Multipart(e.to_string()))?;
+    let file = Part::bytes(f.data.to_vec()).file_name(f.name.clone());
 
-    let form = reqwest::multipart::Form::new()
+    let form = Form::new()
         .part("file", file)
         .text("model", c.env.model_name.clone())
         .text("language", "en")
@@ -184,10 +184,11 @@ async fn transcribe_audio(f: &UploadedFile, c: &ProcessorConfig) -> Result<Strin
         .post(&c.env.transcription_endpoint)
         .multipart(form)
         .send()
-        .await?
+        .await
+        .map_err(Error::WebhookSend)?
         .text()
         .await
-        .map_err(|e| Error::Multipart(e.to_string()))?;
+        .map_err(Error::WebhookSend)?;
 
     Ok(res)
 }
@@ -196,38 +197,19 @@ fn format_timestamp_from_datetime(dt: DateTime<Utc>) -> String {
     dt.to_rfc3339_opts(SecondsFormat::Millis, true)
 }
 
-fn format_embed_ids(m: &[SrcList]) -> EmbedField {
-    EmbedField {
-        name: "Radio IDs:".to_string(),
-        value: m
-            .iter()
-            .map(|x| x.src.to_string())
-            .collect::<Vec<_>>()
-            .join(", "),
-    }
-}
-
-fn format_embed_transcription(t: String) -> EmbedField {
-    EmbedField {
-        name: "Transcription:".to_string(),
-        value: t,
-    }
-}
-
-fn format_embed_timestamp(t: &String) -> EmbedField {
-    EmbedField {
-        name: "Start timestamp:".to_string(),
-        value: t.to_string(),
-    }
-}
-
 async fn create_webhook(m: &AudioMetadata, tr: String) -> Result<String> {
     let timestamp = format_timestamp_from_datetime(dt_from_epoch(m.start_time)?);
-    let fields = vec![
-        format_embed_timestamp(&timestamp),
-        format_embed_ids(&m.src_list),
-        format_embed_transcription(tr),
+
+    let field_types = vec![
+        EmbedFieldType::Timestamp(timestamp.clone()),
+        EmbedFieldType::RadioIds(m.src_list.iter().map(|x| x.src).collect()),
+        EmbedFieldType::Transcription(tr),
     ];
+
+    let fields: Vec<EmbedField> = field_types
+        .into_iter()
+        .map(|field_type| field_type.into_embed_field())
+        .collect();
 
     let embeds = vec![WebhookEmbed {
         color: "12110930".to_string(),
@@ -246,7 +228,7 @@ async fn create_webhook(m: &AudioMetadata, tr: String) -> Result<String> {
 }
 
 async fn send_webhook(
-    client: &reqwest::Client,
+    client: &Client,
     url: &str,
     m: &AudioMetadata,
     t: String,
@@ -295,7 +277,7 @@ async fn filter_on_metadata(m: &AudioMetadata, c: &FilterConfig) -> bool {
     };
 
     // return false if not negated by previous tgid include, or group include
-    info!(%m.talkgroup_group, %tgid_as_string, "Group and tgid unmatched");
+    info!(group = %m.talkgroup_group, tgid = %tgid_as_string, "Filter values unmatched");
     false
 }
 
