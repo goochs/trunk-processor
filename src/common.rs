@@ -1,3 +1,5 @@
+use crate::error::{Error, Result};
+
 use axum::body::Bytes;
 use serde::{Deserialize, Serialize};
 
@@ -112,5 +114,11 @@ impl EmbedFieldType {
                 value: text,
             },
         }
+    }
+}
+
+impl UploadData {
+    pub fn serialize_json(&self) -> Result<AudioMetadata> {
+        serde_json::from_slice(&self.json.data).map_err(Error::JsonParsing)
     }
 }

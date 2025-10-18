@@ -117,10 +117,6 @@ async fn multipart_to_struct(mut m: Multipart) -> Result<UploadData> {
     validate_and_build(files_map)
 }
 
-fn json_from_bytes(b: &axum::body::Bytes) -> Result<AudioMetadata> {
-    serde_json::from_slice(b).map_err(Error::JsonParsing)
-}
-
 fn dt_from_epoch(e: i64) -> Result<DateTime<Utc>> {
     DateTime::from_timestamp_secs(e)
         .ok_or_else(|| Error::DateTime("Invalid epoch provided to create dt".to_string()))
@@ -298,13 +294,13 @@ async fn upload(State(config): State<ProcessorConfig>, m: Multipart) -> Result<S
         "Files received:"
     );
 
-    let meta: AudioMetadata = json_from_bytes(&files.json.data)?;
-    let path: String = path_from_json(&meta)?;
+    let meta = &files.serialize_json()?;
+    let path: String = path_from_json(meta)?;
 
     info!(talkgroup = meta.talkgroup, path = %path, "Processed audio metadata");
 
     let do_transcription = if config.filter.enabled() {
-        filter_on_metadata(&meta, &config.filter).await
+        filter_on_metadata(meta, &config.filter).await
     } else {
         true
     };
@@ -320,7 +316,7 @@ async fn upload(State(config): State<ProcessorConfig>, m: Multipart) -> Result<S
         send_webhook(
             &config.http_client,
             &config.env.discord_webhook,
-            &meta,
+            meta,
             transcription,
             files.audio,
         )
