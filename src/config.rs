@@ -1,3 +1,7 @@
+use diesel::{
+    PgConnection,
+    r2d2::{self, ConnectionManager, Pool},
+};
 use object_store::aws::{AmazonS3, AmazonS3Builder};
 use reqwest::Client;
 use serde::Deserialize;
@@ -9,6 +13,7 @@ pub struct ProcessorConfig {
     pub http_client: Client,
     pub env: EnvConfig,
     pub filter: FilterConfig,
+    pub db_pool: Pool<ConnectionManager<PgConnection>>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -17,6 +22,7 @@ pub struct EnvConfig {
     pub bucket_name: String,
     pub discord_webhook: String,
     pub model_name: String,
+    pub database_url: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -73,13 +79,23 @@ fn init_http_client() -> Client {
         .expect("Failed to create HTTP client")
 }
 
+fn init_db_pool(url: &str) -> Result<Pool<ConnectionManager<PgConnection>>> {
+    let manager = ConnectionManager::new(url.to_string());
+    r2d2::Pool::builder()
+        .max_size(10)
+        .build(manager)
+        .map_err(|e| Error::Database(e.to_string()))
+}
+
 pub fn initialize() -> Result<ProcessorConfig> {
     let env = init_env()?;
     let s3_client = init_s3_client(&env.bucket_name)?;
+    let db_pool = init_db_pool(&env.database_url)?;
 
     Ok(ProcessorConfig {
         env,
         s3_client,
+        db_pool,
         http_client: init_http_client(),
         filter: init_filter()?,
     })

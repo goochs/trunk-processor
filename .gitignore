@@ -23,3 +23,6 @@ target
 
 # MacOS trash
 .DS_Store
+
+# Local database files
+pgdata

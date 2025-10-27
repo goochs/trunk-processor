@@ -16,7 +16,7 @@ pub enum Error {
     },
     InvalidFileType(String),
     Configuration(String),
-    DateTime(String),
+    Database(String),
     #[from]
     ServerInit(std::io::Error),
     #[from]
@@ -27,6 +27,8 @@ pub enum Error {
     JsonParsing(serde_json::Error),
     #[from]
     WebhookSend(reqwest::Error),
+    #[from]
+    Migration(Box<dyn std::error::Error + Send + Sync>),
 }
 
 impl IntoResponse for Error {
@@ -43,12 +45,13 @@ impl IntoResponse for Error {
             }
             Error::InvalidFileType(msg) => format!("Invalid file type: {}", msg),
             Error::Configuration(msg) => format!("Configuration error: {}", msg),
-            Error::DateTime(msg) => format!("DateTime error: {}", msg),
+            Error::Database(msg) => format!("Database error: {}", msg),
             Error::S3Upload(msg) => format!("S3 Upload Error: {}", msg),
             Error::PathParse(msg) => format!("Invalid object path: {}", msg),
             Error::JsonParsing(msg) => format!("Json Parsing Error: {}", msg),
             Error::WebhookSend(msg) => format!("Webhook Send Error: {}", msg),
             Error::ServerInit(msg) => format!("Server Initialization Error: {}", msg),
+            Error::Migration(msg) => format!("DB migration error: {}", msg),
         };
         println!("{:#?} status for {:#?}", status, error_message);
         (status, error_message).into_response()

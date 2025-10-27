@@ -1,6 +1,6 @@
 [package]
 name = "trunk-processor"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2024"
 
 [dependencies]
@@ -9,9 +9,14 @@ chrono = "0.4"
 object_store = { version = "0.12", features = ["aws"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-tokio = { version = "1.47", features = ["full"] }
+tokio = { version = "1.48", features = ["full"] }
 reqwest = { version = "0.12", features = ["multipart"] }
-derive_more = { version = "2.0.1", features = ["from"] }
-envy = "0.4.2"
+derive_more = { version = "2.0", features = ["from"] }
+envy = "0.4"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+diesel = { version = "2.3", features = ["postgres", "chrono", "r2d2", "serde_json"] }
+pq-sys = { version = "0.7", features = ["bundled"] }
+serde_with = { version = "3.15.1", features = ["chrono_0_4"] }
+diesel-derive-enum = { version = "2.1.0", features = ["postgres"] }
+diesel_migrations = { version = "2.3.0", features = ["postgres"] }

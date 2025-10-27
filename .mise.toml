@@ -14,3 +14,13 @@ alias = 'l'
 description = 'Build the project'
 run = 'docker build -t trunk-processor:latest .'
 alias = 'b'
+
+[tasks.db]
+description = 'Clean and run database for development'
+run = [
+    'docker compose down',
+    'rm -r ./pgdata',
+    'docker compose up -d db',
+    'sleep 3',
+    'diesel migration run'
+]
